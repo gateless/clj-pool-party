@@ -44,7 +44,7 @@ likely a good fit for your scenario.
 ### Benchmarks
 
 Preliminary, naive benchmarks show clj-pool-party to be faster than alternatives.
-See [clj-object-pool-benchmarks](https://github.com/enragedginger/clj-object-pool-benchmarks)
+See [clj-object-pool-benchmarks](https://github.com/gateless/clj-object-pool-benchmarks)
 for more details.
 
 ### Why didn't you just use these other libraries?
@@ -67,12 +67,12 @@ This library hasn't seen any activity since January 2019.
 ## Usage
 
 Install from Clojars:
-![Clojars Project](https://img.shields.io/clojars/v/com.github.enragedginger/clj-pool-party.svg)
+![Clojars Project](https://img.shields.io/clojars/v/com.github.gateless/clj-pool-party.svg)
 
 Import like so:
 ```clojure
 (ns com.example
-  (:require [com.github.enragedginger.clj-pool-party.core :as pool-party]))
+  (:require [com.github.gateless.clj-pool-party.core :as pool-party]))
 ```
 
 `build-pool`, `with-object`, and `evict-all` are the important functions.
@@ -81,7 +81,7 @@ See their corresponding doc strings for more info after checking out the example
 ### Basic, contrived example
 ```clojure
 (ns com.example
-  (:require [com.github.enragedginger.clj-pool-party.core :as pool-party])
+  (:require [com.github.gateless.clj-pool-party.core :as pool-party])
   (:import (java.util UUID)))
 
 ;;manage at most 5 objects in the pool
@@ -145,7 +145,7 @@ See their corresponding doc strings for more info after checking out the example
 
 ```clojure
 (ns com.example
-  (:require [com.github.enragedginger.clj-pool-party.core :as pool-party]
+  (:require [com.github.gateless.clj-pool-party.core :as pool-party]
             [hato.client :as client])
   (:import (java.net.http HttpClient)
            (java.util.concurrent Executors)))

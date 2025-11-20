@@ -1,5 +1,5 @@
 (ns bench
-  (:require [com.github.enragedginger.clj-pool-party.core :as pool-party]
+  (:require [com.github.gateless.clj-pool-party.core :as pool-party]
             [double-array-pool-party :as double-array-pool-party]
             [map-pool-party :as map-pool-party]
             [og-pool-party :as og-pool-party]
@@ -67,5 +67,4 @@
   (multi-checkout-og-pool-party)
   (multi-checkout-double-array-pool-party)
   (multi-checkout-array-deque-pool-party)
-  (multi-checkout-hash-set-pool-party)
-  )
+  (multi-checkout-hash-set-pool-party))

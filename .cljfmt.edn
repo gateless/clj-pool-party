@@ -1,0 +1,3 @@
+{:legacy/merge-indents? true
+ :indents {-with-pool-writer-lock [[:inner 0]]
+           -with-pool-semaphore [[:inner 0]]}}

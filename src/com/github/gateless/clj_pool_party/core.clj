@@ -1,4 +1,4 @@
-(ns com.github.enragedginger.clj-pool-party.core
+(ns com.github.gateless.clj-pool-party.core
   (:import (clojure.lang IFn)
            (java.util.concurrent.locks ReentrantLock)
            (java.util.concurrent Semaphore TimeUnit)))
@@ -8,7 +8,7 @@
                ^ReentrantLock writer-lock ^Semaphore semaphore
                ^"[Ljava.lang.Object;" objects-array ^"[Ljava.lang.Boolean;" availability-array])
 
-(defn ^Pool build-pool
+(defn build-pool
   "Builds and returns an object pool
    Params:
    gen-fn - 0-arity function that produces an object for pooling when called.
@@ -27,19 +27,19 @@
    close-fn - 1-arity function to call when closing / destroying an object in the pool
    wait-timeout-ms - The number of milliseconds to wait if the pool is at max capacity. An exception
                      is thrown if this is exceeded."
-  ([gen-fn max-size]
+  (^Pool [gen-fn max-size]
    (build-pool gen-fn max-size {}))
-  ([gen-fn max-size {:keys [close-fn borrow-health-check-fn return-health-check-fn wait-timeout-ms]}]
+  (^Pool [gen-fn max-size {:keys [close-fn borrow-health-check-fn return-health-check-fn wait-timeout-ms]}]
    (assert (pos? max-size) (str "max-size must be positive but was " max-size))
    (assert (or (nil? wait-timeout-ms) (pos? (long wait-timeout-ms)))
-     (str "wait-timeout-ms must be positive but was " wait-timeout-ms))
+           (str "wait-timeout-ms must be positive but was " wait-timeout-ms))
    (Pool. gen-fn max-size borrow-health-check-fn return-health-check-fn close-fn
-     (when wait-timeout-ms
-       (long wait-timeout-ms))
-     (ReentrantLock.)
-     (Semaphore. max-size)
-     (make-array Object max-size)
-     (make-array Boolean max-size))))
+          (when wait-timeout-ms
+            (long wait-timeout-ms))
+          (ReentrantLock.)
+          (Semaphore. max-size)
+          (make-array Object max-size)
+          (make-array Boolean max-size))))
 
 (defmacro -with-pool-writer-lock
   "Executes 'body' in the context of a pool's writer lock."
@@ -69,7 +69,7 @@
            (finally
              (.release sem#)))
          (throw (ex-info (str "Could not acquire pool reader lock in " wait-timeout-ms# " ms")
-                  {:wait-timeout-ms wait-timeout-ms#}))))))
+                         {:wait-timeout-ms wait-timeout-ms#}))))))
 
 (defn- close-and-remove-entry
   "Closes the object associated with the entry at key 'k' in the pool and removes the entry
@@ -121,9 +121,8 @@
 
           :else
           (throw (ex-info "Entire pool is in use, but writer lock was granted. This shouldn't happen"
-                   {:pool pool
-                    :idx  idx}))
-          )))))
+                          {:pool pool
+                           :idx  idx})))))))
 
 (defn- return-object
   "Returns the object at key 'k' back to the pool."
