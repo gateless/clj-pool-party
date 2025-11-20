@@ -1,0 +1,18 @@
+(ns hooks.clj-pool-party
+  (:require [clj-kondo.hooks-api :as api]))
+
+(defn analyze-with-object-macro
+  "Analyzes calls to the 'with-object' macro from clj-pool-party.
+   Transforms the macro call into a 'let' binding for better analysis."
+  [{:keys [:node]}]
+  (let [[pool-node binding-or-fn-node & body] (rest (:children node))
+        new-node (if (seq body)
+                  (api/list-node
+                   (list*
+                    (api/token-node 'let)
+                    (api/vector-node
+                     (vec [binding-or-fn-node pool-node]))
+                    body))
+                  (api/list-node
+                   (list binding-or-fn-node pool-node)))]
+    {:node new-node}))

@@ -51,25 +51,23 @@
        (finally
          (.unlock lock#)))))
 
-(defmacro -with-pool-semaphore
-  "Executes 'body' in the context of a pool's reader semaphore.
-   Potentially N of these can run in parallel where N is max-size."
-  [^Pool pool & body]
-  `(let [^Semaphore sem# (.semaphore ~pool)
-         wait-timeout-ms# (.wait-timeout-ms ~pool)]
-     (if (nil? wait-timeout-ms#)
-       (try
-         (.acquire sem#)
-         ~@body
-         (finally
-           (.release sem#)))
-       (if (.tryAcquire sem# 1 wait-timeout-ms# TimeUnit/MILLISECONDS)
-         (try
-           ~@body
-           (finally
-             (.release sem#)))
-         (throw (ex-info (str "Could not acquire pool reader lock in " wait-timeout-ms# " ms")
-                         {:wait-timeout-ms wait-timeout-ms#}))))))
+(defn- acquire-pool-semaphore!
+  "Acquires a permit from the pool's semaphore, blocking until one is available,
+   or if the pool's wait-timeout-ms is exceeded then throws an exception."
+  [^Pool pool]
+  (let [^Semaphore sem (.semaphore pool)
+        wait-timeout-ms (.wait-timeout-ms pool)]
+    (if (nil? wait-timeout-ms)
+      (.acquire sem)
+      (when-not (.tryAcquire sem 1 wait-timeout-ms TimeUnit/MILLISECONDS)
+        (throw (ex-info (str "Could not acquire pool permit lock in " wait-timeout-ms " ms")
+                        {:wait-timeout-ms wait-timeout-ms}))))))
+
+(defn- release-pool-semaphore!
+  "Releases a permit back to the pool's semaphore."
+  [^Pool pool]
+  (let [^Semaphore sem (.semaphore pool)]
+    (.release sem)))
 
 (defn- close-and-remove-entry
   "Closes the object associated with the entry at key 'k' in the pool and removes the entry
@@ -83,67 +81,78 @@
     (aset objects-array idx nil)
     (aset availability-array idx nil)))
 
-(defn- borrow-object
+(defn borrow-object
   "Acquires an object from the pool. Re-uses an available object if present but will
   call gen-fn if no objects are available but space remains in the pool."
   [^Pool pool]
-  (-with-pool-writer-lock pool
-    (let [borrow-health-check-fn (.borrow-health-check-fn pool)
-          ^"[Ljava.lang.Object;" objects-array (.objects-array pool)
-          ^"[Ljava.lang.Boolean;" availability-array (.availability-array pool)
-          max-size (.max-size pool)]
-      (loop [idx 0
-             first-nil-idx nil]
-        (cond
-          (< idx max-size)
-          (case (aget availability-array idx)
-            true
-            (let [obj (aget objects-array idx)]
-              ;;no health check or health check is positive, so return this object
-              (if (or (nil? borrow-health-check-fn) (borrow-health-check-fn obj))
-                (do
-                  (aset availability-array idx false)
-                  [idx obj])
-                (do
-                  (close-and-remove-entry pool idx)
-                  (recur (inc idx) (or first-nil-idx idx)))))
+  (acquire-pool-semaphore! pool)
+  (try
+    (-with-pool-writer-lock pool
+      (let [borrow-health-check-fn (.borrow-health-check-fn pool)
+            ^"[Ljava.lang.Object;" objects-array (.objects-array pool)
+            ^"[Ljava.lang.Boolean;" availability-array (.availability-array pool)
+            max-size (.max-size pool)]
+        (loop [idx 0
+               first-nil-idx nil]
+          (cond
+            (< idx max-size)
+            (case (aget availability-array idx)
+              true
+              (let [obj (aget objects-array idx)]
+                ;;no health check or health check is positive, so return this object
+                (if (or (nil? borrow-health-check-fn) (borrow-health-check-fn obj))
+                  (do
+                    (aset availability-array idx false)
+                    [idx obj])
+                  (do
+                    (close-and-remove-entry pool idx)
+                    (recur (inc idx) (or first-nil-idx idx)))))
 
-            false (recur (inc idx) first-nil-idx)
+              false (recur (inc idx) first-nil-idx)
 
-            nil (recur (inc idx) (or first-nil-idx idx)))
+              nil (recur (inc idx) (or first-nil-idx idx)))
 
-          first-nil-idx
-          ;;if there's no objects available, create a new one
-          (let [obj ((.gen-fn pool))]
-            (aset objects-array first-nil-idx obj)
-            (aset availability-array first-nil-idx false)
-            [first-nil-idx obj])
+            first-nil-idx
+            ;;if there's no objects available, create a new one
+            (let [obj ((.gen-fn pool))]
+              (aset objects-array first-nil-idx obj)
+              (aset availability-array first-nil-idx false)
+              [first-nil-idx obj])
 
-          :else
-          (throw (ex-info "Entire pool is in use, but writer lock was granted. This shouldn't happen"
-                          {:pool pool
-                           :idx  idx})))))))
+            :else
+            (throw (ex-info "Entire pool is in use, but writer lock was granted. This shouldn't happen"
+                            {:pool pool
+                             :idx  idx}))))))
+    (catch Throwable t
+      (release-pool-semaphore! pool)
+      (throw t))))
 
-(defn- return-object
+(defn return-object
   "Returns the object at key 'k' back to the pool."
   [^Pool pool ^Integer idx]
-  (-with-pool-writer-lock pool
-    (let [^"[Ljava.lang.Object;" objects-array (.objects-array pool)
-          ^"[Ljava.lang.Boolean;" availability-array (.availability-array pool)
-          obj (aget objects-array idx)
-          return-health-check-fn (.return-health-check-fn pool)]
-      (if (and return-health-check-fn (-> obj return-health-check-fn not))
-        (close-and-remove-entry pool idx)
-        (aset availability-array idx true)))))
+  (try
+    (-with-pool-writer-lock pool
+      (let [^"[Ljava.lang.Object;" objects-array (.objects-array pool)
+            ^"[Ljava.lang.Boolean;" availability-array (.availability-array pool)
+            obj (aget objects-array idx)
+            return-health-check-fn (.return-health-check-fn pool)]
+        (if (and return-health-check-fn (-> obj return-health-check-fn not))
+          (close-and-remove-entry pool idx)
+          (aset availability-array idx true))))
+    (finally
+      (release-pool-semaphore! pool))))
 
-(defn with-object
+(defmacro with-object
   "Borrows an object from the pool, applies it to f, and returns the result."
-  [^Pool pool ^IFn f]
-  (-with-pool-semaphore pool
-    (let [[k obj] (borrow-object pool)]
+  ([pool f]
+   `(with-object ~pool obj#
+      (~f obj#)))
+  ([pool obj & body]
+   `(let [[k# ~obj] (borrow-object ~pool)]
       (try
-        (f obj)
-        (finally (return-object pool k))))))
+        ~@body
+        (finally
+          (return-object ~pool k#))))))
 
 (defn evict-all
   "Acquires all locks and then closes and evicts all objects from the pool."
@@ -152,7 +161,7 @@
         ^Integer max-size (.max-size pool)
         locks (atom 0)]
     (try
-      (dotimes [idx max-size]
+      (dotimes [_ max-size]
         (.acquire sem)
         (swap! locks inc))
       (dotimes [idx max-size]

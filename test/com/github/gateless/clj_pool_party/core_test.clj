@@ -46,7 +46,7 @@
                                 (try
                                   (sut/with-object pool
                                     (fn [obj]
-                                      (Thread/sleep (+ 10 wait-timeout-ms))))
+                                      (Thread/sleep (+ 25 wait-timeout-ms))))
                                   false
                                   (catch ExceptionInfo e
                                     (if (-> e ex-data :wait-timeout-ms (= wait-timeout-ms))
@@ -72,6 +72,9 @@
                       times (mod n 3)]
                   (dotimes [idx (* (inc times) max-size)]
                     (sut/with-object pool identity))
+                  (dotimes [idx (* (inc times) max-size)]
+                    (sut/with-object pool obj
+                      (some? obj)))
                   (<= @id-atom max-size))))
 
 ;;Same test as above but we test parallel borrowing with pmap
